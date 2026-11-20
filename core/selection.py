@@ -1,7 +1,46 @@
 """Diagnóstico de demanda, backtesting y selección de modelo."""
+import inspect
 import numpy as np
 import pandas as pd
-from .models import MODELS
+from .models import MODELS, MODELOS_MIN_DIAS
+
+
+def _llamar_modelo(f, y, d, nd, fechas_especiales):
+    """Llama al modelo f(y, d, nd), pasándole también 'fechas_especiales'
+    SOLO si ese modelo en particular sabe qué hacer con ese argumento
+    (hoy, solo 'Perfil día de semana' lo usa, para no dejar que un pico
+    de feriado distorsione el promedio de 'ese día de la semana')."""
+    if "fechas_especiales" in inspect.signature(f).parameters:
+        return f(y, d, nd, fechas_especiales=fechas_especiales)
+    return f(y, d, nd)
+
+
+def modelos_faltantes(dias_disponibles):
+    """Devuelve {modelo: dias_que_faltan} para los modelos que con los
+    días de historial actuales TODAVÍA no pueden correr (no es que sean
+    malos, es que matemáticamente necesitan más días)."""
+    faltan = {}
+    for m, minimo in MODELOS_MIN_DIAS.items():
+        if dias_disponibles < minimo:
+            faltan[m] = minimo - dias_disponibles
+    return faltan
+
+
+def nivel_confianza(diag, n_modelos_probados):
+    """Semáforo simple de qué tan confiable es el pronóstico de un
+    producto, para no obligar al usuario a interpretar ADI/CV² o el
+    número de días él mismo. Considera tanto el largo del calendario
+    como cuántos de esos días tuvieron una venta real (un producto con
+    16 días de calendario pero solo 2 ventas no es mucho más confiable
+    que uno con 2 días de historial).
+    Devuelve (icono, texto_corto)."""
+    dias = diag["dias"]
+    dias_con_venta = round((1 - diag["pct_cero"]) * dias)
+    if dias < 7 or n_modelos_probados == 0 or dias_con_venta < 3:
+        return "🔴", "Muy poca información todavía — tómalo con mucha cautela"
+    if dias < 14 or dias_con_venta < 7 or diag["clase"] in ("Irregular (grumosa)",):
+        return "🟡", "Información limitada — úsalo como referencia, no al pie de la letra"
+    return "🟢", "Suficiente historial para confiar razonablemente"
 
 
 def diagnostico(y):
@@ -32,16 +71,17 @@ def modelos_sugeridos(clase):
     }.get(clase, ["Promedio histórico"])
 
 
-def backtest(y, dates, min_train=5):
+def backtest(y, dates, min_train=5, fechas_especiales=None):
     """Origen rodante, 1 paso adelante. Devuelve (métricas por modelo, pronósticos)."""
     y = np.asarray(y, float)
     dates = pd.DatetimeIndex(dates)
+    fechas_especiales = fechas_especiales or set()
     n = len(y)
     preds = {m: np.full(n, np.nan) for m in MODELS}
     for t in range(min_train, n):
         for m, f in MODELS.items():
             try:
-                preds[m][t] = f(y[:t], dates[:t], dates[t])
+                preds[m][t] = _llamar_modelo(f, y[:t], dates[:t], dates[t], fechas_especiales)
             except Exception:
                 preds[m][t] = np.nan
     # Ensamble: promedio de los 3 modelos con menor error acumulado hasta t-1
@@ -90,17 +130,37 @@ def elegir_ganador(res, tolerancia=0.03):
     return best.Modelo
 
 
-def pronosticar(y, dates, next_date, modelo, res):
+def pronosticar(y, dates, next_date, modelo, res, fechas_especiales=None):
     """Pronóstico del próximo día con el modelo elegido (soporta el ensamble)."""
     from .models import MODELS
     y = np.asarray(y, float)
+    fechas_especiales = fechas_especiales or set()
     if modelo == "Ensamble (top 3)":
         top = [m for m in res.Modelo if m in MODELS][:3]
-        vals = [MODELS[m](y, dates, next_date) for m in top]
+        vals = [_llamar_modelo(MODELS[m], y, dates, next_date, fechas_especiales) for m in top]
         vals = [v for v in vals if v == v]
         return float(np.mean(vals)) if vals else float(y.mean())
-    v = MODELS[modelo](y, dates, next_date)
+    v = _llamar_modelo(MODELS[modelo], y, dates, next_date, fechas_especiales)
     return float(v) if v == v else float(y.mean())
+
+
+def pronosticar_horizonte(y, dates, modelo, res, dias, fechas_especiales=None):
+    """Pronóstico ACUMULADO para los próximos 'dias' días (p.ej. "esta
+    semana vas a vender aprox. Y en total"), re-alimentando cada
+    pronóstico como si fuera dato real para pronosticar el día siguiente.
+    Es una aproximación simple (no vuelve a correr el backtest cada día),
+    pensada para dar una idea de volumen, no una cifra exacta día por día.
+    Devuelve (total, [pronóstico_dia_1, pronóstico_dia_2, ...])."""
+    y_ext = list(np.asarray(y, float))
+    dates_ext = list(pd.DatetimeIndex(dates))
+    diarios = []
+    for i in range(dias):
+        nd = dates_ext[-1] + pd.Timedelta(days=1)
+        p = pronosticar(np.array(y_ext), pd.DatetimeIndex(dates_ext), nd, modelo, res, fechas_especiales)
+        diarios.append(p)
+        y_ext.append(p)
+        dates_ext.append(nd)
+    return float(np.sum(diarios)), diarios
 
 
 def simular_politica(y, preds_modelo, precio, margen, recuperable, cr, rmse, factor_base=1.3, min_train=5):

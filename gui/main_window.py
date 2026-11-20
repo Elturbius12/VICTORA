@@ -7,20 +7,28 @@ from .registro import RegistroFrame
 from .pronostico import PronosticoFrame
 from .educativo_gui import EducativoFrame
 from .dashboard import DashboardFrame
+from .seguimiento import SeguimientoFrame
+from .configuracion import ConfiguracionFrame
 
 AYUDA_TEXTO = """🏠 Resumen del día
-Al abrir la app, aquí verá de un vistazo qué preparar hoy para todos sus
-productos, sin tener que revisarlos uno por uno. También puede exportar
-un reporte en Excel para el encargado de cocina.
+Al abrir la app, aquí verá de un vistazo qué preparar y qué comprar hoy
+para todos sus productos, sin tener que revisarlos uno por uno. También
+puede exportar un reporte en Excel para el encargado de cocina.
 
 📋 Registro de Ventas
 Aquí anota cada día cuánto vendió de cada producto y a qué precio lo vende.
-Mientras más días registre, mejores serán los cálculos.
+Mientras más días registre, mejores serán los cálculos. Si el local estuvo
+cerrado, use el botón "Local cerrado hoy" en vez de poner 0 en todo.
 
 🔮 Motor de Pronóstico
-Elija un producto y el sistema le dirá cuánto preparar mañana, probando
-varias formas de calcularlo y quedándose con la que mejor funciona para
-ese producto en su negocio.
+Elija un producto y el sistema le dirá cuánto se espera vender mañana (y
+cuánto conviene preparar o comprar), probando varias formas de calcularlo
+y quedándose con la que mejor funciona para ese producto en su negocio.
+
+📈 Seguimiento
+Compara lo que el sistema pronosticó contra lo que realmente se vendió,
+para que vea qué tan bien está acertando y anote la razón de los errores
+grandes (llovió, feriado no registrado, etc.).
 
 📚 Módulo Educativo
 Explica, en palabras simples y con ejemplos de su propio negocio, cómo
@@ -29,6 +37,10 @@ funciona cada método de cálculo que usa el sistema.
 📊 Dashboard
 Muestra un vistazo general: qué se vende más, en qué días, y cómo está
 clasificado cada producto (si se vende parejo o de forma irregular).
+
+⚙️ Configuración
+Copias de seguridad de su base de datos, la comanda para imprimir en la
+cocina, y el calendario de feriados y fechas especiales.
 
 💡 Consejo: registre sus ventas todos los días. El sistema se vuelve más
 preciso mientras más información tenga de su negocio.
@@ -74,8 +86,10 @@ class MainWindow(ctk.CTk):
             ("resumen", "🏠 Resumen del día"),
             ("registro", "📋 Registro de Ventas"),
             ("pronostico", "🔮 Motor de Pronóstico"),
+            ("seguimiento", "📈 Seguimiento"),
             ("educativo", "📚 Módulo Educativo"),
             ("dashboard", "📊 Dashboard"),
+            ("configuracion", "⚙️ Configuración"),
         ]
         for key, label in nav_items:
             btn = ctk.CTkButton(
@@ -125,12 +139,16 @@ class MainWindow(ctk.CTk):
         self.main_area = ctk.CTkFrame(self, fg_color=COLORS["bg_dark"], corner_radius=0)
         self.main_area.pack(side="left", fill="both", expand=True)
 
-        # Crear frames
-        self.frames["resumen"] = ResumenFrame(self.main_area)
-        self.frames["registro"] = RegistroFrame(self.main_area)
-        self.frames["pronostico"] = PronosticoFrame(self.main_area)
-        self.frames["educativo"] = EducativoFrame(self.main_area)
-        self.frames["dashboard"] = DashboardFrame(self.main_area)
+        # Las pantallas se crean la primera vez que se abren (carga diferida)
+        self._frame_classes = {
+            "resumen": ResumenFrame,
+            "registro": RegistroFrame,
+            "pronostico": PronosticoFrame,
+            "seguimiento": SeguimientoFrame,
+            "educativo": EducativoFrame,
+            "dashboard": DashboardFrame,
+            "configuracion": ConfiguracionFrame,
+        }
 
         self._actualizar_stats()
 
@@ -164,6 +182,8 @@ class MainWindow(ctk.CTk):
         if self.current:
             self.frames[self.current].pack_forget()
             self.nav_buttons[self.current].configure(fg_color="transparent")
+        if key not in self.frames:
+            self.frames[key] = self._frame_classes[key](self.main_area)
         self.frames[key].pack(fill="both", expand=True)
         self.nav_buttons[key].configure(fg_color=COLORS["primary"])
         self.current = key

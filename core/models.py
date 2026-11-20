@@ -9,6 +9,26 @@ import pandas as pd
 
 MIN_OBS = {"Ingenuo (ayer)": 1}
 
+#: Cuántos días de historial necesita cada modelo para poder correr (no
+#: para que YA sea bueno, solo para que matemáticamente pueda calcularse).
+#: Se usa para explicarle al usuario por qué un modelo "no aparece todavía"
+#: en vez de dejarlo sin explicación, y cuántos días le faltan.
+MODELOS_MIN_DIAS = {
+    "Ingenuo (ayer)": 2,
+    "Promedio histórico": 3,
+    "Media móvil 3d": 3,
+    "Media móvil 7d": 7,
+    "Suavizamiento exp. simple": 3,
+    "Holt amortiguado": 5,
+    "Perfil día de semana": 7,
+    "Holt-Winters semanal": 21,
+    "Croston": 3,
+    "Croston SBA": 3,
+    "TSB": 3,
+    "Regresión ridge (tend.+día)": 7,
+    "Ensamble (top 3)": 8,
+}
+
 
 def _ses_level(y, alpha):
     l = y[0]
@@ -75,14 +95,24 @@ def holt_amortiguado(y, d, nd, phi=0.8):
     return max(0.0, float(l + phi * t))
 
 
-def perfil_dia_semana(y, d, nd):
+def perfil_dia_semana(y, d, nd, fechas_especiales=None):
     """Promedio del mismo día de la semana, encogido hacia el promedio general
-    (con pocos datos, evita sobreajustar a 1-2 observaciones)."""
+    (con pocos datos, evita sobreajustar a 1-2 observaciones).
+
+    Si se pasa 'fechas_especiales' (un set de fechas AAAA-MM-DD, p.ej.
+    feriados o el Día de la Madre), esos días se excluyen del promedio:
+    un pico atípico de un feriado no debe hacer creer que "ese día de la
+    semana" vende más de lo normal."""
     y = np.asarray(y, float)
-    wd = np.asarray(pd.DatetimeIndex(d).dayofweek)
+    d = pd.DatetimeIndex(d)
+    wd = np.asarray(d.dayofweek)
     mask = wd == pd.Timestamp(nd).dayofweek
+    if fechas_especiales:
+        especial = np.asarray([ts.date().isoformat() in fechas_especiales for ts in d])
+        mask = mask & ~especial
     n = mask.sum()
-    g = y.mean()
+    normales = ~np.asarray([ts.date().isoformat() in fechas_especiales for ts in d]) if fechas_especiales else np.ones(len(y), dtype=bool)
+    g = y[normales].mean() if normales.any() else y.mean()
     if n == 0:
         return float(g)
     k = 2.0  # fuerza del encogimiento

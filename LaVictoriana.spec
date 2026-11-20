@@ -3,7 +3,8 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('data', 'data'), ('core', 'core'), ('gui', 'gui')]
 binaries = []
-hiddenimports = ['customtkinter', 'numpy', 'pandas', 'scipy', 'scipy.stats', 'matplotlib', 'matplotlib.backends.backend_tkagg']
+hiddenimports = ['customtkinter', 'numpy', 'pandas', 'scipy', 'scipy.stats', 'matplotlib', 'matplotlib.backends.backend_tkagg',
+                 'openpyxl', 'openpyxl.cell._writer']
 tmp_ret = collect_all('customtkinter')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 

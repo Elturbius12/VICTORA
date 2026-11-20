@@ -64,7 +64,7 @@ MODELOS_EDUCATIVOS = {
         ),
         "ejemplo": lambda y, dates: _ejemplo_media_movil(y, dates, 7),
     },
-    "Suav. Exp. Simple": {
+    "Suavizamiento exp. simple": {
         "nombre": "Suavización Exponencial Simple (SES)",
         "formula": "Nivel_t = α × Venta_t + (1 - α) × Nivel_{t-1}\nPronóstico = Nivel más reciente",
         "explicacion": (
@@ -93,7 +93,7 @@ MODELOS_EDUCATIVOS = {
         ),
         "ejemplo": lambda y, dates: _ejemplo_holt(y, dates),
     },
-    "Perfil día-semana": {
+    "Perfil día de semana": {
         "nombre": "Perfil por Día de la Semana",
         "formula": "Pronóstico = Promedio de ventas de ese mismo día de la semana\n(con ajuste de contracción hacia el promedio general)",
         "explicacion": (
@@ -107,7 +107,7 @@ MODELOS_EDUCATIVOS = {
         ),
         "ejemplo": lambda y, dates: _ejemplo_perfil_dia(y, dates),
     },
-    "Holt-Winters adit.": {
+    "Holt-Winters semanal": {
         "nombre": "Holt-Winters Aditivo (Estacionalidad Semanal)",
         "formula": "Nivel + Tendencia + Factor_Estacional[día_semana]",
         "explicacion": (
@@ -170,7 +170,7 @@ MODELOS_EDUCATIVOS = {
         ),
         "ejemplo": lambda y, dates: _ejemplo_tsb(y, dates),
     },
-    "Ridge (tend+día)": {
+    "Regresión ridge (tend.+día)": {
         "nombre": "Regresión Ridge (Tendencia + Día de la Semana)",
         "formula": "Pronóstico = b₀ + b₁×(número de día) + b₂×(es lunes) + b₃×(es martes) + ...",
         "explicacion": (
@@ -186,7 +186,7 @@ MODELOS_EDUCATIVOS = {
         ),
         "ejemplo": lambda y, dates: _ejemplo_ridge(y, dates),
     },
-    "Ensemble (top 3)": {
+    "Ensamble (top 3)": {
         "nombre": "Ensemble (Promedio de los 3 Mejores)",
         "formula": "Pronóstico = (Pronóstico Modelo A + Pronóstico Modelo B + Pronóstico Modelo C) / 3",
         "explicacion": (
@@ -375,8 +375,8 @@ def _ejemplo_ensemble(y, dates):
         "Supongamos que los 3 mejores modelos pronostican:\n\n"
         "  Media Móvil 3d: 8 unidades\n"
         "  SES: 9 unidades\n"
-        "  Perfil día-semana: 7 unidades\n\n"
-        "Ensemble = (8 + 9 + 7) / 3 = 8.0 unidades\n\n"
+        "  Perfil día de semana: 7 unidades\n\n"
+        "Ensamble = (8 + 9 + 7) / 3 = 8.0 unidades\n\n"
         "El software elige automáticamente los 3 modelos\n"
         "con menor error en el backtesting para cada producto."
     )

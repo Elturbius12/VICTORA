@@ -20,13 +20,13 @@ python --version
 echo.
 
 echo [2/4] Instalando dependencias...
-pip install customtkinter numpy pandas scipy matplotlib pyinstaller
+pip install customtkinter numpy pandas scipy matplotlib openpyxl pyinstaller
 echo.
 
 echo [3/4] Generando ejecutable con PyInstaller...
 echo Esto puede tardar varios minutos, por favor espere...
 echo.
-python -m PyInstaller --noconfirm --onedir --windowed --name "LaVictoriana" --add-data "data;data" --add-data "core;core" --add-data "gui;gui" --hidden-import customtkinter --hidden-import numpy --hidden-import pandas --hidden-import scipy --hidden-import scipy.stats --hidden-import matplotlib --hidden-import matplotlib.backends.backend_tkagg --collect-all customtkinter app.py
+python -m PyInstaller --noconfirm LaVictoriana.spec
 
 if %errorlevel% neq 0 (
     echo.

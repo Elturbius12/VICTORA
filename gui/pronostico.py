@@ -7,10 +7,16 @@ import pandas as pd
 from datetime import timedelta
 import threading
 
-from core.database import get_productos, get_pivot_ventas, get_config, set_config
-from core.selection import diagnostico, modelos_sugeridos, backtest, elegir_ganador, pronosticar, simular_politica
+from core.database import (
+    get_productos, get_pivot_ventas, get_fechas_especiales,
+    promedio_categoria_diario, guardar_pronostico, MARGEN_DEFECTO,
+)
+from core.selection import (
+    diagnostico, modelos_sugeridos, backtest, elegir_ganador, pronosticar,
+    pronosticar_horizonte, simular_politica, nivel_confianza, modelos_faltantes,
+)
 from core.optimizer import razon_critica, cantidad_optima
-from core.reportes import calcular_recomendaciones_todas
+from core.reportes import calcular_recomendaciones_todas, MIN_DIAS_HISTORIAL_PROPIO
 from .tema import COLORS, FONT_FAMILY, FONT_SIZES
 
 try:
@@ -29,6 +35,8 @@ CLASE_SIMPLE = {
     "Sin ventas": ("❔ Todavía no hay suficiente información", "Necesita registrar más días de ventas de este producto."),
 }
 
+ACCION_TXT = {"preparado": "preparar", "reventa": "comprar / reponer"}
+
 
 class PronosticoFrame(ctk.CTkFrame):
     """Pantalla del motor de pronóstico con competencia de modelos."""
@@ -39,7 +47,7 @@ class PronosticoFrame(ctk.CTkFrame):
         self._build()
 
     def _build(self):
-        ctk.CTkLabel(self, text="🔮  ¿Cuánto debo preparar mañana?",
+        ctk.CTkLabel(self, text="🔮  ¿Cuánto vas a vender mañana?",
                      font=(FONT_FAMILY, FONT_SIZES["title"], "bold"),
                      text_color=COLORS["primary"]).pack(anchor="w", padx=20, pady=(15, 2))
         ctk.CTkLabel(self, text="Elija un producto y el sistema probará varias formas de adivinar "
@@ -56,16 +64,17 @@ class PronosticoFrame(ctk.CTkFrame):
         self.prod_combo = ctk.CTkComboBox(ctrl, variable=self.prod_var, width=220, state="readonly")
         self.prod_combo.pack(side="left", padx=5)
 
-        ctk.CTkLabel(ctrl, text="Ganancia sobre el precio (%):").pack(side="left", padx=(15, 0))
-        self.margen_var = ctk.StringVar(value="27.5")
-        ctk.CTkEntry(ctrl, textvariable=self.margen_var, width=60).pack(side="left", padx=5)
-
         ctk.CTkButton(ctrl, text="▶ Calcular este producto", command=self._run,
                        fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"],
-                       width=180).pack(side="left", padx=15)
+                       width=190).pack(side="left", padx=15)
 
         ctk.CTkButton(ctrl, text="📊 Calcular todo", command=self._run_todos,
                        fg_color=COLORS["info"], width=150).pack(side="left", padx=5)
+
+        ctk.CTkLabel(self, text="El margen de ganancia usado es el que tiene guardado cada producto "
+                                "(editable en 'Registro de Ventas' → Nuevo producto).",
+                     font=(FONT_FAMILY, FONT_SIZES["small"]),
+                     text_color=COLORS["text_muted"]).pack(anchor="w", padx=20, pady=(0, 4))
 
         self.status_label = ctk.CTkLabel(self, text="Seleccione un producto y presione Calcular, "
                                                      "o use 'Calcular todo' para ver todos de una vez.",
@@ -103,106 +112,147 @@ class PronosticoFrame(ctk.CTkFrame):
 
     def _ejecutar_todos(self):
         try:
-            margen = float(self.margen_var.get()) / 100
-            resultados = calcular_recomendaciones_todas(margen=margen)
+            resultados, _ = calcular_recomendaciones_todas()
             self.after(0, lambda: self._mostrar_todos(resultados))
         except Exception as e:
-            self.after(0, lambda: self.status_label.configure(text=f"❌ Error: {e}"))
+            msg = str(e)
+            self.after(0, lambda: self.status_label.configure(text=f"❌ Error: {msg}"))
 
     def _mostrar_todos(self, resultados):
         for w in self.result_area.winfo_children():
             w.destroy()
 
+        calculables = [r for r in resultados if r["pronostico"] is not None]
         if not resultados:
-            self.status_label.configure(text="⚠️ Todavía no hay suficientes días de ventas "
-                                              "registrados para calcular. Se necesitan al menos "
-                                              "5 días por producto.")
+            self.status_label.configure(text="⚠️ No hay productos cargados todavía.")
             return
-
-        self.status_label.configure(text=f"✅ Recomendaciones listas para {len(resultados)} productos.")
+        self.status_label.configure(text=f"✅ Recomendaciones listas para {len(calculables)} de "
+                                          f"{len(resultados)} productos.")
 
         self._seccion("📊 Recomendación para todos los productos")
-        self._info("Esta tabla muestra cuánto preparar mañana de cada producto, calculado "
-                   "individualmente para cada uno.")
+        self._info("'Pronóstico de venta' es lo que honestamente se espera vender mañana. "
+                   "'Cantidad sugerida' ya incluye un colchón de seguridad (usa el margen de cada producto).")
 
         hdr = ctk.CTkFrame(self.result_area, fg_color=COLORS["bg_sidebar"], corner_radius=5)
         hdr.pack(fill="x", padx=5, pady=(8, 2))
-        for col, w in [("Producto", 230), ("Cantidad a preparar", 160),
-                       ("Método usado", 220), ("Ganancia estimada", 150)]:
+        for col, w in [("", 25), ("Producto", 210), ("Pronóstico venta", 130),
+                       ("Cantidad sugerida", 140), ("Acción", 130), ("Método usado", 200)]:
             ctk.CTkLabel(hdr, text=col, width=w,
                          font=(FONT_FAMILY, FONT_SIZES["small"], "bold")).pack(side="left", padx=3)
 
         for r in resultados:
             fr = ctk.CTkFrame(self.result_area, fg_color="transparent")
             fr.pack(fill="x", padx=5, pady=1)
+            ctk.CTkLabel(fr, text=r.get("confianza_icono", ""), width=25).pack(side="left", padx=3)
             nombre_txt = r["nombre"] + ("  ⚠️" if r["sin_precio"] else "")
-            ctk.CTkLabel(fr, text=nombre_txt, width=230,
+            ctk.CTkLabel(fr, text=nombre_txt, width=210,
                          font=(FONT_FAMILY, FONT_SIZES["small"]),
                          text_color=COLORS["warning"] if r["sin_precio"] else COLORS["text"]
                          ).pack(side="left", padx=3)
-            ctk.CTkLabel(fr, text=f"{r['cantidad']} unidades", width=160,
-                         font=(FONT_FAMILY, FONT_SIZES["small"], "bold"),
-                         text_color=COLORS["success"]).pack(side="left", padx=3)
-            ctk.CTkLabel(fr, text=r["modelo"], width=220,
+            pron_txt = f"{r['pronostico']:.1f} unid." if r["pronostico"] is not None else "—"
+            ctk.CTkLabel(fr, text=pron_txt, width=130,
                          font=(FONT_FAMILY, FONT_SIZES["small"]),
                          text_color=COLORS["text_muted"]).pack(side="left", padx=3)
-            ganancia_txt = f"S/ {r['ganancia_estimada']:.0f}" if r["ganancia_estimada"] is not None else "Sin precio"
-            ctk.CTkLabel(fr, text=ganancia_txt, width=150,
+            cant_txt = f"{r['cantidad_sugerida']} unid." if r["cantidad_sugerida"] is not None else "—"
+            ctk.CTkLabel(fr, text=cant_txt, width=140,
+                         font=(FONT_FAMILY, FONT_SIZES["small"], "bold"),
+                         text_color=COLORS["success"]).pack(side="left", padx=3)
+            ctk.CTkLabel(fr, text=(r["accion"] or "—").capitalize(), width=130,
                          font=(FONT_FAMILY, FONT_SIZES["small"])).pack(side="left", padx=3)
+            ctk.CTkLabel(fr, text=r["modelo"] or "—", width=200,
+                         font=(FONT_FAMILY, FONT_SIZES["small"]),
+                         text_color=COLORS["text_muted"]).pack(side="left", padx=3)
 
     def _ejecutar(self, nombre):
         try:
-            pivot, _ = get_pivot_ventas()
-            if pivot.empty or nombre not in pivot.columns:
-                self.after(0, lambda: self.status_label.configure(
-                    text="⚠️ No hay suficientes ventas registradas de este producto todavía."))
-                return
-            y = pivot[nombre].values.astype(float)
-            dates = pivot.index
-
-            if len(y) < 5:
-                self.after(0, lambda: self.status_label.configure(
-                    text=f"⚠️ Solo hay {len(y)} día(s) registrado(s) de este producto. "
-                         "Se necesitan al menos 5 días para un cálculo confiable."))
-                return
-
-            # Diagnóstico
-            diag = diagnostico(y)
-
-            # Backtest (competencia de modelos)
-            res, preds = backtest(y, dates)
-
-            # Ganador
-            ganador = elegir_ganador(res)
-
-            # Pronóstico siguiente día
-            next_date = dates[-1] + timedelta(days=1)
-            pron = pronosticar(y, dates, next_date, ganador, res) if ganador else 0
-
-            # Producción óptima
             prods = get_productos()
             prod_row = prods[prods["nombre"] == nombre].iloc[0]
-            margen = float(self.margen_var.get()) / 100
+            tipo = prod_row["tipo"] or "preparado"
+            margen = float(prod_row["margen"] or MARGEN_DEFECTO)
+            categoria = prod_row["categoria"] or ""
+            fechas_especiales = set(get_fechas_especiales()["fecha"].tolist())
+
+            pivot, dias_faltantes_calendario = get_pivot_ventas()
+            tiene_propio = not pivot.empty and nombre in pivot.columns
+            y_completo = pivot[nombre].values.astype(float) if tiene_propio else np.array([])
+
+            if len(y_completo) < MIN_DIAS_HISTORIAL_PROPIO:
+                apoyo = promedio_categoria_diario(categoria, excluir_producto_id=int(prod_row["id"]))
+                faltan = max(0, MIN_DIAS_HISTORIAL_PROPIO - len(y_completo))
+                self.resultado = dict(nombre=nombre, nuevo=True, faltan=faltan, apoyo=apoyo,
+                                       categoria=categoria, tipo=tipo, precio=float(prod_row["precio"]),
+                                       sin_precio=float(prod_row["precio"]) <= 0, margen=margen,
+                                       recuperable=float(prod_row["recuperable"]))
+                self.after(0, self._mostrar_resultados_nuevo)
+                return
+
+            y = y_completo
+            dates = pivot.index
+
+            diag = diagnostico(y)
+            res, preds = backtest(y, dates, min_train=MIN_DIAS_HISTORIAL_PROPIO, fechas_especiales=fechas_especiales)
+            ganador = elegir_ganador(res)
+            next_date = dates[-1] + timedelta(days=1)
+            pron = pronosticar(y, dates, next_date, ganador, res, fechas_especiales) if ganador else 0
+            total_semana, diarios_semana = pronosticar_horizonte(y, dates, ganador, res, 7, fechas_especiales) \
+                if ganador else (0, [])
+
             precio = float(prod_row["precio"])
             sin_precio = precio <= 0
-            cr, c, cu, co = razon_critica(precio, margen, prod_row["recuperable"])
+            recuperable = float(prod_row["recuperable"])
+            cr, c, cu, co = razon_critica(precio, margen, recuperable)
             rmse = float(res[res.Modelo == ganador]["RMSE"].values[0]) if ganador and not res.empty else 1.0
-            q_opt = cantidad_optima(pron, rmse, cr)
+            q_sugerida = cantidad_optima(pron, rmse, cr)
 
-            # Simulación
             preds_ganador = preds.get(ganador, np.zeros(len(y)))
-            sim = simular_politica(y, preds_ganador, precio, margen,
-                                   prod_row["recuperable"], cr, rmse)
+            sim = simular_politica(y, preds_ganador, precio, margen, recuperable, cr, rmse)
+
+            icono, texto_conf = nivel_confianza(diag, len(res) if not res.empty else 0)
+            faltan_modelos = modelos_faltantes(diag["dias"])
+
+            if ganador:
+                guardar_pronostico(next_date.date().isoformat(), int(prod_row["id"]), pron, q_sugerida, ganador)
 
             self.resultado = dict(
-                nombre=nombre, diag=diag, res=res, ganador=ganador,
-                pron=pron, q_opt=q_opt, cr=cr, rmse=rmse,
+                nombre=nombre, nuevo=False, tipo=tipo, diag=diag, res=res, ganador=ganador,
+                pron=pron, q_sugerida=q_sugerida, cr=cr, rmse=rmse,
                 sim=sim, y=y, dates=dates, preds=preds, next_date=next_date,
-                sin_precio=sin_precio, precio=precio
+                sin_precio=sin_precio, precio=precio, dias_faltantes_calendario=dias_faltantes_calendario,
+                total_semana=total_semana, diarios_semana=diarios_semana,
+                confianza_icono=icono, confianza_texto=texto_conf, faltan_modelos=faltan_modelos,
             )
             self.after(0, self._mostrar_resultados)
         except Exception as e:
-            self.after(0, lambda: self.status_label.configure(text=f"❌ Error: {e}"))
+            msg = str(e)
+            self.after(0, lambda: self.status_label.configure(text=f"❌ Error: {msg}"))
+
+    def _mostrar_resultados_nuevo(self):
+        r = self.resultado
+        for w in self.result_area.winfo_children():
+            w.destroy()
+        self.status_label.configure(text=f"✅ Análisis de {r['nombre']} completado.")
+
+        self._seccion("🆕 Este producto es nuevo")
+        self._info(f"Todavía le faltan {r['faltan']} día(s) de historial propio de \"{r['nombre']}\" "
+                   "para un pronóstico confiable solo con sus datos.", bold=True)
+        if r["apoyo"] is not None:
+            tipo = r["tipo"]
+            cr, c, cu, co = razon_critica(r["precio"], r["margen"], r["recuperable"])
+            q = cantidad_optima(r["apoyo"], max(r["apoyo"] * 0.6, 0.5), cr)
+            self._info(f"Mientras tanto, usando el promedio de otros productos de su categoría "
+                       f"(\"{r['categoria']}\"), se estima un punto de partida de "
+                       f"{r['apoyo']:.1f} unidades/día.", muted=True)
+            destacado = ctk.CTkFrame(self.result_area, fg_color=COLORS["warning"], corner_radius=10)
+            destacado.pack(fill="x", padx=10, pady=10)
+            verbo = ACCION_TXT.get(tipo, "preparar")
+            ctk.CTkLabel(destacado, text=f"🧪 Cantidad orientativa a {verbo} (estimado por categoría):",
+                         font=(FONT_FAMILY, FONT_SIZES["body"], "bold"), text_color="black").pack(
+                padx=15, pady=(12, 0), anchor="w")
+            ctk.CTkLabel(destacado, text=f"{q} unidades", font=(FONT_FAMILY, 28, "bold"),
+                         text_color="black").pack(padx=15, pady=(0, 12), anchor="w")
+        else:
+            self._info("No hay productos parecidos (misma categoría) con historial para apoyarse. "
+                       "Use su propio criterio hasta tener más días registrados.", muted=True)
 
     def _mostrar_resultados(self):
         r = self.resultado
@@ -211,16 +261,30 @@ class PronosticoFrame(ctk.CTkFrame):
 
         self.status_label.configure(text=f"✅ Análisis de {r['nombre']} completado.")
 
-        # ── Aviso si no tiene precio ──
+        if r.get("dias_faltantes_calendario"):
+            f = r["dias_faltantes_calendario"]
+            ej = ", ".join(f[:4]) + ("..." if len(f) > 4 else "")
+            aviso = ctk.CTkFrame(self.result_area, fg_color=COLORS["bg_sidebar"], corner_radius=8)
+            aviso.pack(fill="x", padx=10, pady=(10, 5))
+            ctk.CTkLabel(aviso, text=f"⚠️ Hay {len(f)} día(s) sin ningún registro en su historial ({ej}). "
+                                     "Esto puede afectar la precisión del cálculo.",
+                         font=(FONT_FAMILY, FONT_SIZES["small"]),
+                         text_color=COLORS["warning"], wraplength=850, justify="left").pack(
+                padx=15, pady=8, anchor="w")
+
         if r["sin_precio"]:
             aviso = ctk.CTkFrame(self.result_area, fg_color=COLORS["danger"], corner_radius=8)
-            aviso.pack(fill="x", padx=10, pady=(10, 5))
+            aviso.pack(fill="x", padx=10, pady=(5, 5))
             ctk.CTkLabel(aviso, text="⚠️  Este producto no tiene un precio registrado todavía.\n"
-                                     "La cantidad a producir sí es confiable, pero la ganancia "
+                                     "La cantidad sugerida sí es confiable, pero la ganancia "
                                      "estimada en S/ no lo será hasta que le ponga un precio en "
                                      "'Registro de Ventas'.",
                          font=(FONT_FAMILY, FONT_SIZES["body"], "bold"),
                          text_color="white", justify="left").pack(padx=15, pady=10, anchor="w")
+
+        # ── Confiabilidad ──
+        self._seccion(f"{r['confianza_icono']} ¿Qué tan confiable es este pronóstico?")
+        self._info(r["confianza_texto"])
 
         # ── Cómo se vende este producto ──
         self._seccion("🧭 ¿Cómo se vende este producto?")
@@ -228,7 +292,12 @@ class PronosticoFrame(ctk.CTkFrame):
         titulo, detalle = CLASE_SIMPLE.get(diag["clase"], ("", ""))
         self._info(titulo, bold=True)
         self._info(detalle)
-        self._info(f"(Basado en {diag['dias']} días de ventas registradas)", muted=True)
+        self._info(f"(Basado en {diag['dias']} días de calendario registrados)", muted=True)
+
+        if r.get("faltan_modelos"):
+            partes = [f"{m} (le faltan {d} día(s))" for m, d in sorted(r["faltan_modelos"].items(), key=lambda x: x[1])]
+            self._info("Modelos que todavía no pueden probarse con el historial actual: " + "; ".join(partes[:4]) +
+                       ("..." if len(partes) > 4 else ""), muted=True)
 
         # ── Competencia de métodos ──
         self._seccion("🏆 Comparamos varias formas de adivinar la demanda")
@@ -253,31 +322,41 @@ class PronosticoFrame(ctk.CTkFrame):
                 ctk.CTkLabel(row_fr, text=f"{row['MAE']:.1f} unidades", width=260).pack(side="left", padx=2)
                 ctk.CTkLabel(row_fr, text=f"{row['wMAPE']:.0%}", width=100).pack(side="left", padx=2)
 
-        # ── Resultado principal ──
-        self._seccion("🎯 Nuestra recomendación para mañana")
+        # ── Pronóstico puro ──
+        self._seccion("🎯 Pronóstico honesto para mañana")
         self._info(f"El método que mejor funcionó para \"{r['nombre']}\" fue: {r['ganador']}")
-        self._info(f"Con ese método, se espera vender aproximadamente {r['pron']:.1f} unidades mañana.")
+        pronostico_box = ctk.CTkFrame(self.result_area, fg_color=COLORS["info"], corner_radius=10)
+        pronostico_box.pack(fill="x", padx=10, pady=10)
+        ctk.CTkLabel(pronostico_box, text="📈 Mañana se espera vender aproximadamente:",
+                     font=(FONT_FAMILY, FONT_SIZES["body"], "bold"), text_color="white").pack(
+            padx=15, pady=(12, 0), anchor="w")
+        ctk.CTkLabel(pronostico_box, text=f"{r['pron']:.1f} unidades",
+                     font=(FONT_FAMILY, 26, "bold"), text_color="white").pack(padx=15, pady=(0, 12), anchor="w")
 
-        # Caja destacada con la cantidad a producir
+        if r.get("total_semana") is not None:
+            self._info(f"📆 Sumando día a día, esta semana se espera vender en total aproximadamente "
+                       f"{r['total_semana']:.0f} unidades (estimado, no exacto día por día).", muted=True)
+
+        # ── Cantidad sugerida (con colchón de seguridad) ──
+        verbo = ACCION_TXT.get(r["tipo"], "preparar")
+        self._seccion(f"✅ Cantidad sugerida a {verbo}")
+        self._info("Esta cantidad ya incluye un pequeño margen de seguridad (usa la ganancia del "
+                   "producto) para no quedarse sin stock si vende un poco más de lo esperado, "
+                   "sin sobre-producir de más.", muted=True)
         destacado = ctk.CTkFrame(self.result_area, fg_color=COLORS["success"], corner_radius=10)
         destacado.pack(fill="x", padx=10, pady=10)
-        ctk.CTkLabel(destacado, text="✅ Cantidad recomendada a preparar mañana:",
+        ctk.CTkLabel(destacado, text=f"✅ Cantidad recomendada a {verbo}:",
                      font=(FONT_FAMILY, FONT_SIZES["body"], "bold"),
                      text_color="white").pack(padx=15, pady=(12, 0), anchor="w")
-        ctk.CTkLabel(destacado, text=f"{r['q_opt']} unidades",
+        ctk.CTkLabel(destacado, text=f"{r['q_sugerida']} unidades",
                      font=(FONT_FAMILY, 30, "bold"),
                      text_color="white").pack(padx=15, pady=(0, 12), anchor="w")
-
-        self._info("Esta cantidad ya incluye un pequeño margen de seguridad, pensado para que "
-                   "no se quede sin stock si vende un poco más de lo esperado, sin sobre-producir "
-                   "de más.", muted=True)
 
         # ── Simulación: cuánto se ahorraría ──
         if not r["sin_precio"]:
             self._seccion("💰 ¿Cuánto cambiaría si usa este método?")
             self._info("Comparamos, con los datos ya registrados, lo que hubiera pasado produciendo "
-                       "'a ojo' (como se hace normalmente) contra producir siguiendo la recomendación "
-                       "del sistema.")
+                       "'a ojo' (como se hace normalmente) contra seguir la recomendación del sistema.")
             sim = r["sim"]
             for label, key in [("📋 Como se produce habitualmente", "base"), ("🤖 Con la recomendación del sistema", "modelo")]:
                 s = sim[key]
@@ -294,7 +373,6 @@ class PronosticoFrame(ctk.CTkFrame):
                                text_color=color)
             lbl.pack(anchor="w", padx=15, pady=5)
 
-        # ── Gráfico ──
         if HAS_MPL:
             self._graficar(r)
 
