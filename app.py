@@ -31,6 +31,9 @@ from victora.decision import costos  # noqa: E402
 from victora.utils import fmt_num, fmt_s  # noqa: E402
 
 TMP_DIR = os.path.join(tempfile.gettempdir(), "victora_tmp")
+TABS_NEG = ["🏠 Resumen del día", "📋 Registro", "🔮 Pronóstico", "📈 Seguimiento", "📊 Dashboard",
+            "📚 Aprende", "⚙️ Configuración"]
+MODOS = ["🏪 Mi negocio (día a día)", "🔬 Análisis completo y artículo"]
 TABS = ["🏠 El Problema", "📤 Cargar Datos", "✅ Decisión", "💰 Impacto", "📊 Análisis", "📑 Reportes",
         "📖 Metodología"]
 
@@ -208,13 +211,15 @@ with st.sidebar:
         st.session_state["pedir_reset"] = True
     if st.session_state.get("pedir_reset"):
         dialogo_reset()
-    st.caption("Tus datos no salen de esta computadora.")
+    st.caption("«Restablecer todo» limpia el análisis de esta sesión; no borra las ventas registradas en la "
+               "base de datos.")
 
 if "_aviso" in st.session_state:
     st.toast(st.session_state.pop("_aviso"), icon="✅")
 if st.session_state.pop("_reset_ok", False):
     st.toast("La app se restableció por completo.", icon="🗑️")
 if st.session_state.pop("_abrir_decision", False):
+    st.session_state["modo"] = MODOS[1]
     st.session_state["tabs_main"] = TABS[2]  # abre la pestaña de Decisión al terminar el análisis
 
 
@@ -272,6 +277,14 @@ def tab_cargar():
                        key="dl_plant_ej", width="stretch")
     c3.download_button("📥 Guía de recetas", c_plantilla_recetas(), "Plantilla_Recetas_Guia.xlsx",
                        key="dl_recetas_cargar", width="stretch")
+    st.markdown("**Opción A — usar lo registrado en 🏪 Mi negocio** (ventas, productos y recetas de la base de datos):")
+    if st.button("📋 Usar mis ventas registradas", key="usar_bd", type="primary"):
+        from victora.nucleo.database import datos_para_analisis
+        from victora.plantilla import _escribir
+        st.session_state["contenido"] = _escribir(datos_para_analisis(), ejemplo=False)
+        st.session_state["_nombre_subido"] = ("__bd__", 0)
+        st.session_state["es_demo"] = False
+    st.markdown("**Opción B — subir un Excel:**")
     up = st.file_uploader("Sube tu archivo Excel (.xlsx) basado en la plantilla", type=["xlsx"],
                           key="file_uploader_main")
     if up is not None and st.session_state.get("_nombre_subido") != (up.name, up.size):
@@ -591,9 +604,18 @@ def tab_metodologia():
 
 
 # =============================================================== despacho (solo la pestaña abierta)
-tabs = st.tabs(TABS, on_change="rerun", key="tabs_main")
-for tab, fn in zip(tabs, [tab_problema, tab_cargar, tab_decision, tab_impacto, tab_analisis, tab_reportes,
-                          tab_metodologia]):
+from victora import negocio_ui as neg  # noqa: E402
+
+modo = st.segmented_control("Sección", MODOS, key="modo", default=MODOS[0], label_visibility="collapsed")
+if modo == MODOS[1]:
+    nombres, funciones, clave = TABS, [tab_problema, tab_cargar, tab_decision, tab_impacto, tab_analisis,
+                                       tab_reportes, tab_metodologia], "tabs_main"
+else:
+    nombres, funciones, clave = TABS_NEG, [neg.tab_resumen, neg.tab_registro, neg.tab_pronostico,
+                                           neg.tab_seguimiento, neg.tab_dashboard, neg.tab_educativo,
+                                           neg.tab_configuracion], "tabs_neg"
+tabs = st.tabs(nombres, on_change="rerun", key=clave)
+for tab, fn in zip(tabs, funciones):
     with tab:
         if not getattr(tab, "open", True):
             continue

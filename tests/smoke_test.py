@@ -18,6 +18,8 @@ def test_app_demo_sin_excepciones():
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file(os.path.join(os.path.dirname(__file__), "..", "app.py"), default_timeout=120).run()
     assert not at.exception
+    at.session_state["modo"] = "🔬 Análisis completo y artículo"
+    at.run()
     at.button(key="demo_btn").click().run()
     assert not at.exception
     assert at.session_state["R"]["n_productos"] == 32

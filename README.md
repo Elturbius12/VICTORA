@@ -19,7 +19,22 @@ pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-Se abre en `http://localhost:8501`. Funciona sin internet y los datos no salen de la computadora.
+Se abre en `http://localhost:8501`. En una PC, las ventas registradas se guardan en `data/victoriana.db` (SQLite);
+en Render se guardan en Postgres (variable `DATABASE_URL`).
+
+## Dos secciones en una sola app
+
+Arriba de la app hay un selector:
+
+- **🏪 Mi negocio (día a día)** — todo lo que tenía la app de escritorio:
+  🏠 Resumen del día (qué preparar/comprar hoy, reporte Excel y comanda PDF) · 📋 Registro (ventas diarias,
+  precios, «Local cerrado», productos, recetas, importar catálogo/ventas) · 🔮 Pronóstico (competencia de modelos
+  por producto) · 📈 Seguimiento (pronóstico vs. venta real, observaciones, historial completo) · 📊 Dashboard ·
+  📚 Aprende (módulo educativo) · ⚙️ Configuración (copia de seguridad y restauración, comanda, feriados).
+  Los datos se guardan en la base de datos y se conservan entre visitas.
+- **🔬 Análisis completo y artículo** — el análisis v3 (decisión newsvendor, impacto, estadística, reporte de
+  20 hojas). En **📤 Cargar Datos** puedes usar **«📋 Usar mis ventas registradas»** (toma lo de «Mi negocio») o
+  subir un Excel con la plantilla.
 
 ## Uso paso a paso
 
@@ -74,23 +89,32 @@ python tests/smoke_test.py   # app + pipeline 32 × 21 < 30 s y resultados idén
 
 ## Despliegue en Render
 
-El repositorio ya está listo: `requirements.txt` (con `streamlit` en la primera línea), `.python-version`
-(3.12) y `render.yaml` están en la raíz. `.streamlit/config.toml` **no** fija el puerto.
+Es **un solo servicio web** (la app) más su **base de datos Postgres gratuita** de Render, donde se guardan
+las ventas, productos, pronósticos y fechas especiales. Todo está listo en el repositorio: `requirements.txt`
+(`streamlit` en la primera línea), `.python-version` (3.12) y `render.yaml`. `.streamlit/config.toml` **no** fija
+el puerto.
 
-**Opción A — Blueprint (automático):** en Render, *New → Blueprint*, elige este repositorio y acepta;
-`render.yaml` crea el servicio con todo configurado.
+**Opción A — Blueprint (recomendada, todo automático):** en Render, *New → Blueprint*, elige este repositorio y
+acepta. `render.yaml` crea la app `victora` y la base `victora-db`, y las conecta con `DATABASE_URL`.
 
 **Opción B — manual:**
 
-1. *New → Web Service*, conectado al repositorio de GitHub (rama `main`).
-2. Environment: **Python 3**. Root Directory: vacío (la raíz del repo).
+1. *New → Postgres*: nombre `victora-db`, plan Free. Cuando esté lista, copia su **Internal Database URL**.
+2. *New → Web Service*, conectado al repositorio de GitHub (rama `main`). Environment: **Python 3**.
+   Root Directory: vacío.
 3. Build Command: `pip install -r requirements.txt`
 4. Start Command: `streamlit run app.py --server.port $PORT --server.address 0.0.0.0`
-5. No se necesita declarar ninguna variable de entorno propia (opcional: `PYTHON_VERSION=3.12.8` si Render no lee `.python-version`).
-6. Plan: Free (o el que elijas).
+5. Environment Variables: `DATABASE_URL` = la Internal Database URL del paso 1
+   (opcional: `PYTHON_VERSION=3.12.8` si Render no lee `.python-version`).
+6. Plan: Free.
 
-El plan gratuito «duerme» tras inactividad; el primer acceso tarda en despertar. Todo el estado vive en
-`st.session_state`, nada depende del disco entre reinicios.
+Al primer arranque la app crea las tablas y carga el catálogo de 32 productos de La Victoriana.
+Para pasar tus datos de la app de escritorio, usa **📋 Registro → 📂 Importar** (ventas CSV, catálogo).
+
+**Importante sobre el plan gratuito:**
+- El servicio web «duerme» tras 15 min sin uso; la primera visita tarda ~1 min en despertar.
+- **El Postgres gratuito de Render vence a los 30 días.** Antes de eso, en **⚙️ Configuración** descarga la
+  **copia de seguridad (.xlsx)**; luego crea una base nueva (o pasa a un plan pagado) y usa **Restaurar**.
 
 ## Empaquetar para Windows (PyInstaller)
 
