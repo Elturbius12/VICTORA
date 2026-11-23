@@ -1,8 +1,12 @@
-__pycache__/
+*.db
 *.pyc
+*.spec
+*.zip
+.claude/settings.local.json
+.pytest_cache/
+__pycache__/
 build/
 dist/
 instalador_output/
-*.zip
-*.db
-.claude/settings.local.json
+.agents/
+.claude/
