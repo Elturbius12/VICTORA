@@ -1,15 +1,11 @@
 """Base de datos del negocio diario de VICTORA (ventas, productos, pronósticos, calendario).
 
-* En Render (o cualquier servidor) usa **PostgreSQL** si existe la variable de entorno
-  ``DATABASE_URL`` (Render la inyecta al enlazar su Postgres gratuito).
-* En una PC sin esa variable usa un archivo **SQLite** local (``data/victoriana.db``).
-
-El resto del módulo escribe SQL estilo SQLite (``?``); ``_Conexion`` lo traduce a Postgres.
+Todo se guarda en un archivo SQLite local. Por defecto ``data/victoriana.db`` junto al código;
+el ejecutable de Windows usa ``%LOCALAPPDATA%\VICTORA\victoriana.db`` (variable ``VICTORA_SQLITE``),
+así cada usuario tiene sus propios datos y la carpeta del programa se puede compartir tal cual.
 """
 import os
-import re
 import sqlite3
-import threading
 from datetime import datetime, date, timedelta
 import pandas as pd
 
@@ -17,105 +13,33 @@ DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.ab
 DB_PATH = os.environ.get("VICTORA_SQLITE", os.path.join(DB_DIR, "victoriana.db"))
 
 
-def _url_pg():
-    url = os.environ.get("DATABASE_URL", "").strip()
-    if url.startswith("postgres://"):
-        url = "postgresql://" + url[len("postgres://"):]
-    return url or None
-
-
 def usa_postgres() -> bool:
-    return _url_pg() is not None
-
-
-class _CursorVacio:
-    def fetchone(self):
-        return None
-
-    def fetchall(self):
-        return []
-
-    def __iter__(self):
-        return iter(())
+    """Compatibilidad: VICTORA es solo local (SQLite)."""
+    return False
 
 
 class _Conexion:
-    """Envoltorio mínimo con la interfaz de sqlite3 (execute/commit/close) para SQLite y Postgres."""
+    """Envoltorio mínimo sobre sqlite3 (execute/commit/close)."""
 
-    _local = threading.local()   # una conexión Postgres por hilo, reutilizada entre llamadas
+    pg = False
 
     def __init__(self):
-        self.pg = usa_postgres()
-        if self.pg:
-            import psycopg
-            c = getattr(_Conexion._local, "pg", None)
-            if c is None or c.closed or c.broken:
-                c = psycopg.connect(_url_pg(), connect_timeout=15)
-                _Conexion._local.pg = c
-            self.raw = c
-        else:
-            os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-            self.raw = sqlite3.connect(DB_PATH)
-            self.raw.execute("PRAGMA journal_mode=WAL")
-
-    @staticmethod
-    def _traducir(sql: str) -> str:
-        sql = sql.replace("?", "%s")
-        if re.search(r"INSERT\s+OR\s+IGNORE", sql, re.I):
-            sql = re.sub(r"INSERT\s+OR\s+IGNORE", "INSERT", sql, flags=re.I).rstrip().rstrip(";")
-            sql += " ON CONFLICT DO NOTHING"
-        if re.match(r"\s*(CREATE|ALTER)\s+TABLE", sql, re.I):
-            sql = re.sub(r"INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY", sql, flags=re.I)
-            sql = re.sub(r"\bREAL\b", "DOUBLE PRECISION", sql)
-        return sql
-
-    def _reconectar(self):
-        import psycopg
-        try:
-            self.raw.close()
-        except Exception:  # noqa: BLE001
-            pass
-        self.raw = psycopg.connect(_url_pg(), connect_timeout=15)
-        _Conexion._local.pg = self.raw
+        os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
+        self.raw = sqlite3.connect(DB_PATH, timeout=15)
+        self.raw.execute("PRAGMA journal_mode=WAL")
+        self.raw.execute("PRAGMA synchronous=NORMAL")
 
     def execute(self, sql, params=()):
-        if not self.pg:
-            return self.raw.execute(sql, tuple(params))
-        if sql.strip().upper().startswith("PRAGMA"):
-            return _CursorVacio()
-        import psycopg
-        q = self._traducir(sql)
-        for intento in (1, 2):
-            cur = self.raw.cursor()
-            try:
-                cur.execute(q, tuple(params))
-                return cur
-            except psycopg.OperationalError:
-                # conexión caída (Postgres cerró una conexión inactiva): reconectar y reintentar una vez
-                if intento == 2 or not self.raw.broken:
-                    try:
-                        self.raw.rollback()
-                    except Exception:  # noqa: BLE001
-                        pass
-                    raise
-                self._reconectar()
-            except Exception:
-                self.raw.rollback()
-                raise
+        return self.raw.execute(sql, tuple(params))
 
     def executescript(self, script):
-        for parte in script.split(";"):
-            if parte.strip():
-                self.execute(parte)
+        self.raw.executescript(script)
 
     def commit(self):
         self.raw.commit()
 
     def close(self):
-        if self.pg:
-            self.raw.commit()
-        else:
-            self.raw.close()
+        self.raw.close()
 
 
 def _conn():

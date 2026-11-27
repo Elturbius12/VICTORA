@@ -1,6 +1,8 @@
 """Validación por origen rodante (rolling origin) y selección automática del modelo."""
 from __future__ import annotations
 
+import time
+
 import numpy as np
 import pandas as pd
 
@@ -35,14 +37,21 @@ def escalas(y_train) -> tuple[float, float]:
 
 
 def evaluar_producto(y: pd.Series, intermitente: bool, n_total: int) -> dict:
-    """Backtesting de todos los modelos activos para un producto."""
+    """Backtesting de todos los modelos activos para un producto.
+
+    Además mide con ``time.perf_counter()`` el tiempo acumulado de cada modelo en el
+    origen rodante y lo devuelve en ``"tiempos"`` ({modelo: segundos}) junto con ``"n_origenes"``.
+    """
     vals, dow = y.values.astype(float), y.index.dayofweek.values
     activos = modelos_activos(n_total, intermitente)
     t0 = inicio_prueba(len(vals), activos)
     preds = {m: [] for m in activos}
+    tiempos: dict[str, float] = {m: 0.0 for m in activos}
     for t in range(t0, len(vals)):
         for m in activos:
+            ti = time.perf_counter()
             preds[m].append(pronosticar(m, vals[:t], 1, dow[:t], dow[t:t + 1])[0])
+            tiempos[m] += time.perf_counter() - ti
     real = vals[t0:]
     sa, sc = escalas(vals[:t0])
     principal = "RMSSE" if intermitente else "MASE"
@@ -63,7 +72,8 @@ def evaluar_producto(y: pd.Series, intermitente: bool, n_total: int) -> dict:
     bt["error"] = bt["real"] - bt["pronostico"]
     return {"ranking": rank, "backtest": bt, "ganador": ganador, "top3": top, "t0": t0,
             "residuos": real - np.array(preds[ganador]), "pred_ganador": np.array(preds[ganador]),
-            "real": real, "fechas_prueba": fechas}
+            "real": real, "fechas_prueba": fechas,
+            "tiempos": tiempos, "n_origenes": int(len(vals) - t0)}
 
 
 def pronostico_futuro(y: pd.Series, modelo: str, top3: list[str], h: int = HORIZONTE):

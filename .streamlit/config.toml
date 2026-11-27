@@ -6,9 +6,33 @@ runOnSave = false
 [browser]
 gatherUsageStats = false
 
+[client]
+toolbarMode = "minimal"
+
+# Paleta de La Victoriana (gui/tema.py del programa de escritorio original):
+# dorado #B8860B · fondo #1A1A2E · tarjetas #16213E · barra lateral #0F3460 · fuente Segoe UI.
 [theme]
-primaryColor = "#D4380D"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F5F5F5"
-textColor = "#1A1A1A"
-font = "sans serif"
+base = "dark"
+primaryColor = "#B8860B"
+linkColor = "#DAA520"
+backgroundColor = "#1A1A2E"
+secondaryBackgroundColor = "#16213E"
+textColor = "#EAEAEA"
+borderColor = "#2A3558"
+showWidgetBorder = true
+baseRadius = "8px"
+buttonRadius = "8px"
+font = "'Segoe UI', sans-serif"
+headingFontWeights = [700, 700, 700, 600, 600, 600]
+metricValueFontWeight = 700
+greenColor = "#27AE60"
+orangeColor = "#F39C12"
+redColor = "#E74C3C"
+blueColor = "#3498DB"
+chartCategoricalColors = ["#B8860B", "#3498DB", "#27AE60", "#F39C12", "#E74C3C", "#8E44AD", "#1ABC9C", "#A0A0A0"]
+
+[theme.sidebar]
+backgroundColor = "#0F3460"
+secondaryBackgroundColor = "#16213E"
+textColor = "#EAEAEA"
+borderColor = "#1F4A80"

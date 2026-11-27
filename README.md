@@ -19,22 +19,32 @@ pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-Se abre en `http://localhost:8501`. En una PC, las ventas registradas se guardan en `data/victoriana.db` (SQLite);
-en Render se guardan en Postgres (variable `DATABASE_URL`).
+Se abre en `http://localhost:8501`. Las ventas registradas se guardan en `data/victoriana.db` (SQLite local).
 
 ## Dos secciones en una sola app
 
 Arriba de la app hay un selector:
 
-- **🏪 Mi negocio (día a día)** — todo lo que tenía la app de escritorio:
-  🏠 Resumen del día (qué preparar/comprar hoy, reporte Excel y comanda PDF) · 📋 Registro (ventas diarias,
-  precios, «Local cerrado», productos, recetas, importar catálogo/ventas) · 🔮 Pronóstico (competencia de modelos
-  por producto) · 📈 Seguimiento (pronóstico vs. venta real, observaciones, historial completo) · 📊 Dashboard ·
-  📚 Aprende (módulo educativo) · ⚙️ Configuración (copia de seguridad y restauración, comanda, feriados).
+- **🏪 Mi negocio (día a día)** — la app de escritorio **🍗 La Victoriana** («Vende lo justo, no más, no menos»),
+  con su paleta dorado/azul oscuro y su menú lateral de 7 pantallas, en el mismo orden que el original:
+  🏠 Resumen del día (qué preparar/comprar hoy, reporte Excel, comanda PDF, copia de seguridad) · 📋 Registro de
+  Ventas (ventas diarias, precios, «Local cerrado hoy», nuevo producto, importar catálogo/ventas; además edición
+  avanzada de productos y recetas) · 🔮 Motor de Pronóstico (competencia de modelos por producto) · 📈 Seguimiento
+  (pronóstico vs. venta real, observaciones, historial completo) · 📚 Módulo Educativo · 📊 Dashboard ·
+  ⚙️ Configuración (copia de seguridad y restauración, comanda, feriados).
   Los datos se guardan en la base de datos y se conservan entre visitas.
 - **🔬 Análisis completo y artículo** — el análisis v3 (decisión newsvendor, impacto, estadística, reporte de
   20 hojas). En **📤 Cargar Datos** puedes usar **«📋 Usar mis ventas registradas»** (toma lo de «Mi negocio») o
   subir un Excel con la plantilla.
+
+## Tutorial, manual y diseño
+
+- **Tutorial de bienvenida** (6 pasos): aparece la primera vez que se abre VICTORA en una PC; se repite con
+  **Ver tutorial** en la barra lateral (`victora/tutorial.py`).
+- **Manual de usuario (.docx)**: botón **Manual** en la barra lateral; se genera con el mismo contenido del tutorial.
+- **Panel gerencial** en ✅ Decisión: veredicto en semáforo (adoptar / piloto / mantener) basado en el intervalo de
+  confianza bootstrap del ahorro, y tabla «Dónde actuar primero» con el ahorro por producto.
+- Identidad visual en `.streamlit/config.toml` y `victora/estilo.py` (sin recursos de internet).
 
 ## Uso paso a paso
 
@@ -79,56 +89,24 @@ python -m pytest tests tests/smoke_test.py
 python tests/smoke_test.py   # app + pipeline 32 × 21 < 30 s y resultados idénticos en dos ejecuciones
 ```
 
-## Streamlit Cloud
+## Ejecutable para compartir (Windows, 100 % local)
 
-1. Usa este repositorio de GitHub (el archivo principal es `app.py`, en la raíz).
-2. En share.streamlit.io elige el repositorio, la rama y `app.py`; en *Advanced settings* elige **Python 3.12 o superior**.
-3. `requirements.txt` se instala solo. No hay recursos externos (CDN, fuentes) que puedan dejar la pantalla en blanco.
+VICTORA funciona **solo en la computadora**: sin internet, sin servidor y sin base de datos externa.
 
-> No pude probar el despliegue en Streamlit Cloud desde aquí; las versiones fijadas funcionan localmente.
-
-## Despliegue en Render
-
-Es **un solo servicio web** (la app) más su **base de datos Postgres gratuita** de Render, donde se guardan
-las ventas, productos, pronósticos y fechas especiales. Todo está listo en el repositorio: `requirements.txt`
-(`streamlit` en la primera línea), `.python-version` (3.12) y `render.yaml`. `.streamlit/config.toml` **no** fija
-el puerto.
-
-**Opción A — Blueprint (recomendada, todo automático):** en Render, *New → Blueprint*, elige este repositorio y
-acepta. `render.yaml` crea la app `victora` y la base `victora-db`, y las conecta con `DATABASE_URL`.
-
-**Opción B — manual:**
-
-1. *New → Postgres*: nombre `victora-db`, plan Free. Cuando esté lista, copia su **Internal Database URL**.
-2. *New → Web Service*, conectado al repositorio de GitHub (rama `main`). Environment: **Python 3**.
-   Root Directory: vacío.
-3. Build Command: `pip install -r requirements.txt`
-4. Start Command: `streamlit run app.py --server.port $PORT --server.address 0.0.0.0`
-5. Environment Variables: `DATABASE_URL` = la Internal Database URL del paso 1
-   (opcional: `PYTHON_VERSION=3.12.8` si Render no lee `.python-version`).
-6. Plan: Free.
-
-Al primer arranque la app crea las tablas y carga el catálogo de 32 productos de La Victoriana.
-Para pasar tus datos de la app de escritorio, usa **📋 Registro → 📂 Importar** (ventas CSV, catálogo).
-
-**Importante sobre el plan gratuito:**
-- El servicio web «duerme» tras 15 min sin uso; la primera visita tarda ~1 min en despertar.
-- **El Postgres gratuito de Render vence a los 30 días.** Antes de eso, en **⚙️ Configuración** descarga la
-  **copia de seguridad (.xlsx)**; luego crea una base nueva (o pasa a un plan pagado) y usa **Restaurar**.
-
-## Empaquetar para Windows (PyInstaller)
-
-```bash
-pip install pyinstaller
-pyinstaller --noconfirm --name VICTORA --onedir ^
-  --add-data "app.py;." --add-data "victora;victora" --add-data "datos_demo;datos_demo" ^
-  --add-data ".streamlit;.streamlit" ^
-  --collect-all streamlit --collect-submodules statsmodels --copy-metadata streamlit ^
-  lanzador.py
+```bat
+construir_exe.bat
 ```
 
-El resultado queda en `dist\VICTORA\VICTORA.exe` (abre el servidor local y el navegador). Para un instalador,
-usa Inno Setup apuntando a `dist\VICTORA\*`. No probé el empaquetado.
+Genera `dist\VICTORA\VICTORA.exe` y **`dist\VICTORA_Windows.zip`** (esto es lo que se comparte).
+El usuario descomprime, hace doble clic en `VICTORA.exe` y el programa se abre en su navegador
+(ver `LEEME_USUARIOS.txt`, incluido en el ZIP).
+
+- Los datos de cada usuario se guardan en `%LOCALAPPDATA%\VICTORA\victoriana.db` (no en la carpeta del
+  programa): compartir el ZIP nunca comparte datos, y no hace falta permiso de administrador.
+- El lanzador busca un puerto libre, abre el navegador apenas el servidor responde (≈ 5–10 s) y, si VICTORA
+  ya está abierto, solo abre otra pestaña. Escucha únicamente en `127.0.0.1` (nadie de la red accede).
+- Autodiagnóstico: `VICTORA.exe --autotest` recorre todas las pantallas con datos de demostración.
+- Pasar datos a otra PC: **⚙️ Configuración → Copia de seguridad** y **Restaurar** en la otra PC.
 
 ## Desviaciones explícitas respecto al prompt
 

@@ -12,7 +12,18 @@ Rendimiento:
 """
 import streamlit as st
 
-st.set_page_config(page_title="VICTORA — ¿Cuánto producir mañana?", page_icon="🥐", layout="wide")
+MODOS = ["🏪 Mi negocio (día a día)", "🔬 Análisis completo y artículo"]
+if st.session_state.pop("_abrir_decision", False):
+    st.session_state["modo"] = MODOS[1]
+    st.session_state["tabs_main"] = "✅ Decisión"  # abre la pestaña de Decisión al terminar el análisis
+if st.session_state.get("modo") not in MODOS:
+    st.session_state["modo"] = MODOS[0]
+ES_NEGOCIO = st.session_state["modo"] == MODOS[0]
+# «Mi negocio» conserva la identidad de la app de escritorio La Victoriana; el análisis, la de VICTORA.
+if ES_NEGOCIO:
+    st.set_page_config(page_title="La Victoriana – Sistema de Pronóstico de Demanda", page_icon="🍗", layout="wide")
+else:
+    st.set_page_config(page_title="VICTORA — ¿Cuánto producir mañana?", page_icon="🥐", layout="wide")
 
 import gc  # noqa: E402
 import io  # noqa: E402
@@ -29,11 +40,11 @@ from victora import __version__  # noqa: E402
 from victora.config import COLCHON_P0, CONTEXTO_DEFECTO, HOJAS_REPORTE  # noqa: E402
 from victora.decision import costos  # noqa: E402
 from victora.utils import fmt_num, fmt_s  # noqa: E402
+from victora import estilo, tutorial  # noqa: E402
+
+estilo.inyectar_css()
 
 TMP_DIR = os.path.join(tempfile.gettempdir(), "victora_tmp")
-TABS_NEG = ["🏠 Resumen del día", "📋 Registro", "🔮 Pronóstico", "📈 Seguimiento", "📊 Dashboard",
-            "📚 Aprende", "⚙️ Configuración"]
-MODOS = ["🏪 Mi negocio (día a día)", "🔬 Análisis completo y artículo"]
 TABS = ["🏠 El Problema", "📤 Cargar Datos", "✅ Decisión", "💰 Impacto", "📊 Análisis", "📑 Reportes",
         "📖 Metodología"]
 
@@ -197,35 +208,59 @@ def correr(contenido: bytes, huecos: dict, demo: bool = False):
 
 
 # =============================================================== sidebar
-with st.sidebar:
-    st.markdown(f"### 🥐 VICTORA v{__version__}")
-    st.caption("Pronóstico de demanda y decisión óptima de producción")
-    R0 = st.session_state.get("R")
-    if R0:
-        st.success(f"Análisis listo: {R0['n_productos']} productos × {R0['n_dias']} días ({R0['segundos']:.1f} s)")
-        if st.session_state.get("es_demo"):
-            st.info("Usando datos de DEMOSTRACIÓN (ficticios).")
-    else:
-        st.info("Sin datos cargados.")
-    if st.button("🗑️ Restablecer todo", key="reset_sidebar", type="primary", width="stretch"):
-        st.session_state["pedir_reset"] = True
-    if st.session_state.get("pedir_reset"):
-        dialogo_reset()
-    st.caption("«Restablecer todo» limpia el análisis de esta sesión; no borra las ventas registradas en la "
-               "base de datos.")
+from victora import negocio_ui as neg  # noqa: E402
+
+neg.iniciar_bd()
+
+
+def _ayuda_lateral():
+    st.markdown("**Ayuda**")
+    h1, h2 = st.columns(2)
+    if h1.button("Ver tutorial", icon=":material/school:", key="tuto_btn", width="stretch"):
+        tutorial.abrir()
+    h2.download_button("Manual", tutorial.manual_docx(), "Manual_VICTORA.docx", icon=":material/menu_book:",
+                       key="manual_dl", width="stretch", help="Manual detallado de usuario (Word)",
+                       mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+PANTALLA_NEG = None
+if ES_NEGOCIO:
+    with st.sidebar:
+        PANTALLA_NEG = neg.barra_lateral(__version__)
+        _ayuda_lateral()
+        st.divider()
+        estilo.pie_victoriana(__version__)
+else:
+    with st.sidebar:
+        estilo.marca_lateral(__version__)
+        st.caption("Pronóstico de demanda y decisión óptima de producción para comida perecible.")
+        R0 = st.session_state.get("R")
+        if R0:
+            st.success(f"Análisis listo: {R0['n_productos']} productos × {R0['n_dias']} días ({R0['segundos']:.1f} s)")
+            if st.session_state.get("es_demo"):
+                st.info("Usando datos de DEMOSTRACIÓN (ficticios).")
+        else:
+            st.info("Sin datos cargados.")
+        _ayuda_lateral()
+        st.divider()
+        if st.button("🗑️ Restablecer todo", key="reset_sidebar", type="primary", width="stretch"):
+            st.session_state["pedir_reset"] = True
+        if st.session_state.get("pedir_reset"):
+            st.session_state["tuto_abierto"] = False  # un solo diálogo por ejecución
+            dialogo_reset()
+        st.caption("«Restablecer todo» limpia el análisis de esta sesión; no borra las ventas registradas en la "
+                   "base de datos.")
+
 
 if "_aviso" in st.session_state:
     st.toast(st.session_state.pop("_aviso"), icon="✅")
 if st.session_state.pop("_reset_ok", False):
     st.toast("La app se restableció por completo.", icon="🗑️")
-if st.session_state.pop("_abrir_decision", False):
-    st.session_state["modo"] = MODOS[1]
-    st.session_state["tabs_main"] = TABS[2]  # abre la pestaña de Decisión al terminar el análisis
 
 
 # =============================================================== 1. El problema
 def tab_problema():
-    st.title("¿Cuánto producir mañana?")
+    st.header("El problema")
     ej = costos(0.30, 55)
     st.markdown(
         "### Si produces de más, pierdes en merma. Si produces de menos, pierdes ventas.\n"
@@ -234,15 +269,10 @@ def tab_problema():
         f"Ejemplo: un pan cuesta S/ {fmt_num(ej['c'])} y se vende a S/ 0,30. "
         f"**Produces 100 → vendes 70 → pierdes {fmt_s(30 * ej['c'])} en merma.** "
         f"**Produces 50 → la demanda era 70 → dejas de ganar {fmt_s(20 * ej['Cu'])}.**")
-    c = st.columns(4)
-    for col, (ic, t, d) in zip(c, [("📥", "1. Sube datos", "Tu Excel de ventas, precios y recetas"),
-                                   ("🔍", "2. Analiza", "Pronóstico y validación automática"),
-                                   ("✅", "3. Decide", "Cuánto producir y qué insumos comprar"),
-                                   ("📊", "4. Exporta", "Reportes listos para tu artículo")]):
-        with col:
-            st.markdown(f"<div style='text-align:center;font-size:2.2rem'>{ic}</div>"
-                        f"<div style='text-align:center'><b>{t}</b><br><small>{d}</small></div>",
-                        unsafe_allow_html=True)
+    estilo.pasos([("Sube datos", "Tu Excel de ventas, precios y recetas"),
+                  ("Analiza", "Pronóstico y validación automática por producto"),
+                  ("Decide", "Cuánto producir y qué insumos comprar"),
+                  ("Exporta", "Reporte, figuras y textos listos para tu artículo")])
     st.divider()
     c1, c2, c3 = st.columns(3)
     c1.download_button("📥 Descargar plantilla de datos", c_plantilla_vacia(), "Plantilla_VICTORA_vacia.xlsx",
@@ -353,11 +383,13 @@ def tab_decision():
     st.header("✅ Qué producir mañana")
     st.caption(f"Plan para el {primer:%A %d/%m/%Y} (primer día después de tus datos). Cantidad recomendada, con "
                "mínimo y máximo razonables, según el modelo de cada producto.")
-    k = st.columns(3)
-    k[0].metric("📦 Productos analizados", R["n_productos"])
-    k[1].metric("📅 Horizonte del plan", "7 días")
-    k[2].metric(f"💰 Ahorro estimado vs. producir sin pronóstico ({etiqueta_fuente(R)})",
-                fmt_s(R["boot"]["ahorro_S/"]), f"{fmt_num(R['boot']['ahorro_pct'], 1)} %")
+    panel_gerencial(R)
+    k = st.columns(4)
+    k[0].metric("Productos analizados", R["n_productos"], border=True)
+    k[1].metric("Unidades a producir mañana", f"{int(man['producir'].sum()):,}".replace(",", "."), border=True)
+    k[2].metric("Horizonte del plan", "7 días", border=True)
+    k[3].metric(f"Ahorro vs. sin pronóstico ({etiqueta_fuente(R)})",
+                fmt_s(R["boot"]["ahorro_S/"]), f"{fmt_num(R['boot']['ahorro_pct'], 1)} %", border=True)
     d = man[["nombre", "producir", "intervalo_10", "intervalo_90", "modelo"]].rename(columns={
         "nombre": "Producto", "producir": "Producir mañana", "intervalo_10": "Mínimo", "intervalo_90": "Máximo",
         "modelo": "Modelo usado"})
@@ -390,6 +422,53 @@ def tab_decision():
         tabla(ins, "Lista_compras", "compras", 2)
     else:
         st.info("No hay recetas registradas: descarga la guía de recetas para completarlas.")
+
+
+def panel_gerencial(R):
+    """Veredicto claro para la gerencia + semáforo por producto (dónde actuar primero)."""
+    b = R["boot"]
+    rp = R["res_pol"].set_index("politica")
+    c0, c4 = rp.loc["P0", "costo_total"], rp.loc["P4", "costo_total"]
+    if b["IC95_S/_inf"] > 0:
+        estilo.veredicto("ok", "Decisión recomendada", "Adoptar VICTORA para planificar la producción",
+                         f"Reduce el costo de merma + ventas perdidas de {fmt_s(c0)} a {fmt_s(c4)} "
+                         f"({fmt_num(b['ahorro_pct'], 1)} %). El ahorro es estadísticamente sólido "
+                         f"(IC 95 %: {fmt_s(b['IC95_S/_inf'])} a {fmt_s(b['IC95_S/_sup'])}).")
+    elif b["ahorro_S/"] > 0:
+        estilo.veredicto("med", "Decisión recomendada", "Adoptar VICTORA en piloto y seguir registrando ventas",
+                         f"Ahorro estimado {fmt_s(b['ahorro_S/'])} ({fmt_num(b['ahorro_pct'], 1)} %), pero con "
+                         f"{R['n_dias']} días el intervalo de confianza incluye cero "
+                         f"({fmt_s(b['IC95_S/_inf'])} a {fmt_s(b['IC95_S/_sup'])}). Con más días la evidencia se fortalece.")
+    else:
+        estilo.veredicto("no", "Decisión recomendada", "Mantener la práctica actual por ahora",
+                         f"Con los datos actuales VICTORA no mejora el costo ({fmt_s(c0)} → {fmt_s(c4)}). "
+                         "Revise precios/costos y cargue más días.")
+    pp = R["res_pp"].pivot_table(index="producto_id", columns="politica", values="costo_total", aggfunc="sum")
+    if not {"P0", "P4"} <= set(pp.columns):
+        return
+    t = pd.DataFrame({"Producto": pp.index.map(lambda p: R["nombres"].get(p, p)),
+                      "Costo actual S/": pp["P0"].values, "Costo con VICTORA S/": pp["P4"].values})
+    t["Ahorro S/"] = t["Costo actual S/"] - t["Costo con VICTORA S/"]
+    t["Ahorro %"] = 100 * t["Ahorro S/"] / t["Costo actual S/"].where(t["Costo actual S/"] > 0)
+    t["Acción"] = t["Ahorro S/"].map(lambda a: "🟢 Aplicar Q* de VICTORA" if a > 0.5 else
+                                     ("🔴 Mantener cantidad actual" if a < -0.5 else "🟡 Indiferente"))
+    t = t.sort_values("Ahorro S/", ascending=False)
+    with st.expander(":material/insights: Dónde actuar primero (ahorro por producto)", expanded=True):
+        a, b2, c = st.columns(3)
+        a.metric("Productos donde conviene VICTORA", int((t["Ahorro S/"] > 0.5).sum()), border=True)
+        b2.metric("Mayor ahorro individual", fmt_s(t["Ahorro S/"].max()), t["Producto"].iloc[0], border=True, delta_arrow="off",
+                  delta_color="off")
+        c.metric("Productos a mantener como están", int((t["Ahorro S/"] < -0.5).sum()), border=True)
+        st.dataframe(t, hide_index=True, width="stretch", height=min(420, 40 + 35 * len(t)),
+                     column_config={
+                         "Costo actual S/": st.column_config.NumberColumn(format="S/ %.2f"),
+                         "Costo con VICTORA S/": st.column_config.NumberColumn(format="S/ %.2f"),
+                         "Ahorro S/": st.column_config.ProgressColumn(
+                             format="S/ %.2f", min_value=float(min(0, t["Ahorro S/"].min())),
+                             max_value=float(max(1, t["Ahorro S/"].max()))),
+                         "Ahorro %": st.column_config.NumberColumn(format="%.1f %%")})
+        st.caption("Costo = merma (lo producido que no se vende) + margen perdido (ventas que faltaron), "
+                   "en el periodo de prueba. «Costo actual» = política P0 del negocio.")
 
 
 # =============================================================== 4. Impacto
@@ -603,25 +682,37 @@ def tab_metodologia():
             language=None)
 
 
-# =============================================================== despacho (solo la pestaña abierta)
-from victora import negocio_ui as neg  # noqa: E402
+# =============================================================== despacho (solo la pantalla abierta)
+def _ejecutar_seguro(fn):
+    try:
+        fn()
+    except Exception as e:  # noqa: BLE001 — un error en una pantalla no debe matar toda la app
+        st.error(f"Error en esta sección: {e}")
+        with st.expander("Detalle técnico"):
+            st.code(traceback.format_exc())
 
-modo = st.segmented_control("Sección", MODOS, key="modo", default=MODOS[0], label_visibility="collapsed")
-if modo == MODOS[1]:
-    nombres, funciones, clave = TABS, [tab_problema, tab_cargar, tab_decision, tab_impacto, tab_analisis,
-                                       tab_reportes, tab_metodologia], "tabs_main"
+
+if not ES_NEGOCIO:
+    _ctx = {**CONTEXTO_DEFECTO, **st.session_state.get("contexto", {})}
+    _R = st.session_state.get("R")
+    _chips = ["100 % local · sin internet", f"Caso: {_ctx.get('caso', '')}"]
+    if _R:
+        _chips += [f"{_R['n_productos']} productos × {_R['n_dias']} días",
+                   f"Ahorro estimado {fmt_s(_R['boot']['ahorro_S/'])}"]
+    estilo.hero("¿Cuánto producir mañana?",
+                "Pronóstico de demanda y decisión óptima de producción: menos merma, menos ventas perdidas, "
+                "evidencia lista para la gerencia y para tu artículo.", _chips)
+modo = st.segmented_control("Sección", MODOS, key="modo", label_visibility="collapsed", required=True)
+if ES_NEGOCIO:
+    # Mi negocio: menú lateral de 7 pantallas (como la app de escritorio); solo corre la elegida.
+    _ejecutar_seguro(neg.PANTALLAS[PANTALLA_NEG])
 else:
-    nombres, funciones, clave = TABS_NEG, [neg.tab_resumen, neg.tab_registro, neg.tab_pronostico,
-                                           neg.tab_seguimiento, neg.tab_dashboard, neg.tab_educativo,
-                                           neg.tab_configuracion], "tabs_neg"
-tabs = st.tabs(nombres, on_change="rerun", key=clave)
-for tab, fn in zip(tabs, funciones):
-    with tab:
-        if not getattr(tab, "open", True):
-            continue
-        try:
-            fn()
-        except Exception as e:  # noqa: BLE001 — un error en una pestaña no debe matar toda la app
-            st.error(f"Error en esta sección: {e}")
-            with st.expander("Detalle técnico"):
-                st.code(traceback.format_exc())
+    tabs = st.tabs(TABS, on_change="rerun", key="tabs_main")
+    for tab, fn in zip(tabs, [tab_problema, tab_cargar, tab_decision, tab_impacto, tab_analisis, tab_reportes,
+                              tab_metodologia]):
+        with tab:
+            if getattr(tab, "open", True):
+                _ejecutar_seguro(fn)
+
+# Al final: si una pantalla abrió su propio diálogo en esta ejecución, el tutorial no compite con él.
+tutorial.mostrar_si_corresponde()

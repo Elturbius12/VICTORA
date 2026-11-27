@@ -1,0 +1,17 @@
+VICTORA - ¿Cuánto producir mañana?
+==================================
+
+1. Descomprima el ZIP en cualquier carpeta (por ejemplo, Escritorio o Documentos).
+2. Abra la carpeta VICTORA y haga doble clic en VICTORA.exe.
+   Se abre una ventana negra (déjela abierta) y luego su navegador con el programa.
+   No necesita internet ni instalar nada.
+3. Para cerrar VICTORA, cierre la ventana negra.
+
+Si Windows muestra "Windows protegió su PC": pulse "Más información" -> "Ejecutar de todas formas"
+(el programa no está firmado digitalmente).
+
+Sus datos se guardan en esta computadora, en  %LOCALAPPDATA%\VICTORA
+Para pasarlos a otra PC: Configuración -> Copia de seguridad -> Restaurar en la otra PC.
+
+La primera vez que abre VICTORA aparece un tutorial paso a paso. Puede repetirlo con
+"Ver tutorial" (barra lateral) y descargar el manual completo en Word con "Manual".

@@ -261,6 +261,29 @@ def reporte_completo(R) -> bytes:
                 "Información de reproducibilidad", "Dos ejecuciones con los mismos datos y parámetros dan resultados idénticos.",
                 numerar=False)
 
+        # 19 Tiempos por modelo
+        tm = R["tiempos_modelo"].copy()
+        tm.insert(1, "producto", tm["producto_id"].map(nom))
+        f = L.tabla(ws["19_Tiempos_Modelos"], 0, _r(tm, 6), "Tiempo de cómputo por modelo y producto (backtesting)",
+                    f"Medido con time.perf_counter(); tiempo total de backtesting = {R['tiempo_backtesting']:.3f} s.")
+        res = (R["tiempos_modelo"].groupby("modelo")["segundos"].agg(["sum", "mean"])
+               .rename(columns={"sum": "segundos_total", "mean": "segundos_promedio_producto"}).reset_index())
+        L.tabla(ws["19_Tiempos_Modelos"], f, _r(res, 6), "Tiempo total por modelo", "Suma sobre todos los productos.")
+
+        # 20 Ecuaciones LaTeX
+        s = ws["20_Ecuaciones_LaTeX"]
+        s.set_column(0, 0, 22)
+        s.set_column(1, 1, 120)
+        s.write(0, 0, "Ecuaciones (LaTeX listo para copiar)", L.f["h1"])
+        for i, (et, tex) in enumerate(R["ecuaciones_latex"], start=2):
+            s.write(i, 0, et)
+            s.write(i, 1, tex)
+
+        # 21 Referencias
+        s = ws["21_Referencias"]
+        s.write(0, 0, "Referencias (APA 7)", L.f["h1"])
+        L.parrafos(s, 2, [(None, t) for t in R["referencias_apa"]])
+
         # 99 datos
         s = ws["99_Datos_Limpios"]
         f = L.tabla(s, 0, R["m"].reset_index(), "Matriz de ventas diarias (fecha × producto)", "Datos validados.", numerar=False)

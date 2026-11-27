@@ -37,5 +37,8 @@ HOJAS_REPORTE = {
     "16_Limitaciones": "Limitaciones del estudio.",
     "17_Figuras": "Figuras con título y leyenda sugeridos (300 dpi).",
     "18_Reproducibilidad": "Versiones, semilla, parámetros y hash de los datos.",
+    "19_Tiempos_Modelos": "Tiempo de cómputo (s) de cada modelo en el backtesting por producto y n.º de orígenes.",
+    "20_Ecuaciones_LaTeX": "Ecuaciones del método en LaTeX (equation + label) con los parámetros reales.",
+    "21_Referencias": "Bibliografía en APA 7 con DOI verificado (o marcada para verificar).",
     "99_Datos_Limpios": "Datos validados usados en el análisis.",
 }

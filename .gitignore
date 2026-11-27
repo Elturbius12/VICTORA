@@ -1,6 +1,6 @@
 *.db
 *.pyc
-*.spec
+!VICTORA.spec
 *.zip
 .claude/settings.local.json
 .pytest_cache/

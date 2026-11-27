@@ -19,7 +19,7 @@ def R():
 
 def test_hojas_reporte(R):
     wb = openpyxl.load_workbook(io.BytesIO(R["excel_reporte"]))
-    assert wb.sheetnames == list(HOJAS_REPORTE) and len(wb.sheetnames) == 20
+    assert wb.sheetnames == list(HOJAS_REPORTE) and len(wb.sheetnames) == 23
     assert "Tabla 1." in str(wb["02_Problema_Ahorro"]["A3"].value)
     metodos = " ".join(str(c.value) for c in wb["14_Texto_Metodos"]["A"] if c.value)
     assert "Cᵤ / (Cᵤ + Cₒ)" in metodos and "MASE" in metodos and "La Victoriana" in metodos

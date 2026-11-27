@@ -57,6 +57,11 @@ def ejecutar(datos: dict, tratamiento_huecos: dict | None = None, colchon: float
     R["ranking"] = pd.concat([s["ranking"].assign(producto_id=p) for p, s in sel.items()], ignore_index=True)
     R["backtest"] = pd.concat([s["backtest"].assign(producto_id=p) for p, s in sel.items()], ignore_index=True)
     R["ganadores"] = pd.concat([s["ranking"].head(1).assign(producto_id=p) for p, s in sel.items()], ignore_index=True)
+    R["tiempos_modelo"] = pd.DataFrame(
+        [{"producto_id": p, "modelo": mod, "segundos": seg, "n_origenes": s["n_origenes"]}
+         for p, s in sel.items() for mod, seg in s["tiempos"].items()],
+        columns=["producto_id", "modelo", "segundos", "n_origenes"])
+    R["tiempo_backtesting"] = float(R["tiempos_modelo"]["segundos"].sum())
     R["n_prueba"] = int(np.median([len(s["real"]) for s in sel.values()]))
 
     paso(3)
@@ -83,6 +88,11 @@ def ejecutar(datos: dict, tratamiento_huecos: dict | None = None, colchon: float
     R["texto_resultados"] = textos.resultados(R)
     R["texto_resumen"] = textos.resumen(R)
     R["hallazgos"] = textos.hallazgos(R)
+    R["ecuaciones_latex"] = textos.ecuaciones_latex(R)
+    R["marco_normativo"] = textos.marco_normativo()
+    from . import referencias
+    R["referencias"] = referencias.bibliografia()
+    R["referencias_apa"] = [referencias.formato_apa(r) for r in R["referencias"]]
 
     paso(8)
     from . import reporte_excel, reporte_figuras

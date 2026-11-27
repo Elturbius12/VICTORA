@@ -243,3 +243,57 @@ def hallazgos(R) -> list[str]:
         f"El modelo que más veces gana es {frec.index[0]} ({frec.iloc[0]} de {R['n_productos']} productos).",
         f"Clase A (≈80 % del ingreso): {int((R['clasif']['ABC'] == 'A').sum())} productos.",
     ]
+
+
+def ecuaciones_latex(R) -> list[tuple[str, str]]:
+    """Ecuaciones del método en LaTeX (entorno equation con label), con parámetros reales de la ejecución."""
+    from .config import ENTRENAMIENTO_MIN, MAX_PRUEBA, N_BOOT
+    B = int(R.get("boot", {}).get("replicas", N_BOOT))
+    nv = NIVEL_NO_PERECIBLE
+    eqs = [
+        ("eq:costo_unitario", r"c_i = p_i\left(1 - \frac{m_i}{100}\right)"),
+        ("eq:costo_exceso", r"C_{o,i} = c_i - v_i"),
+        ("eq:costo_faltante", r"C_{u,i} = p_i - c_i"),
+        ("eq:razon_critica", r"CR_i = \frac{C_{u,i}}{C_{u,i} + C_{o,i}}"
+                             rf"\quad (\text{{no perecibles: }} CR_i = {nv:.2f})".replace(".", "{,}")),
+        ("eq:newsvendor", r"Q_{i,t}^{*} = \hat{F}_{i,t}^{-1}(CR_i), \quad "
+                          r"\hat{F}_{i,t}(x) = \frac{1}{n}\sum_{k=1}^{n} \mathbf{1}\left\{\max\left(0,\ \hat{y}_{i,t} + e_{i,k}\right) \le x\right\}"),
+        ("eq:mase", r"\mathrm{MASE} = \frac{\frac{1}{h}\sum_{t=T+1}^{T+h} \lvert y_t - \hat{y}_t \rvert}"
+                    r"{\frac{1}{T-1}\sum_{t=2}^{T} \lvert y_t - y_{t-1} \rvert}"),
+        ("eq:rmsse", r"\mathrm{RMSSE} = \sqrt{\frac{\frac{1}{h}\sum_{t=T+1}^{T+h} (y_t - \hat{y}_t)^2}"
+                     r"{\frac{1}{T-1}\sum_{t=2}^{T} (y_t - y_{t-1})^2}}"),
+        ("eq:adi_cv2", r"\mathrm{ADI} = \frac{N}{N_{+}}, \quad \mathrm{CV}^2 = \left(\frac{\sigma_{y^{+}}}{\mu_{y^{+}}}\right)^2,"
+                       r"\quad \text{intermitente} \iff \mathrm{ADI} > 1{,}32 \ \wedge\ \mathrm{CV}^2 \ge 0{,}49"),
+        ("eq:wilcoxon", r"W^{+} = \sum_{j:\, d_j > 0} R_j, \quad W^{-} = \sum_{j:\, d_j < 0} R_j, \quad "
+                        r"r_{rb} = \frac{W^{+} - W^{-}}{W^{+} + W^{-}}"),
+        ("eq:bootstrap", rf"\mathrm{{IC}}_{{95\%}} = \left[\hat{{\theta}}^{{*}}_{{(0{{,}}025)}},\ \hat{{\theta}}^{{*}}_{{(0{{,}}975)}}\right],"
+                         rf"\quad \hat{{\theta}}^{{*}}_b = \bar{{A}}^{{*}}_b,\ b = 1,\dots,B,\ B = {B}"),
+    ]
+    notas = {"eq:newsvendor": f"% e_{{i,k}}: residuos del backtesting rolling origin (entrenamiento mínimo {ENTRENAMIENTO_MIN} días, "
+                              f"máximo {MAX_PRUEBA} orígenes); Q* truncado en 0 y ajustado al lote.\n"}
+    return [(et, notas.get(et, "") + "\\begin{equation}\\label{" + et + "}\n" + tex + "\n\\end{equation}") for et, tex in eqs]
+
+
+def marco_normativo() -> str:
+    """Párrafo académico que vincula el pronóstico de demanda de perecibles con la normativa sanitaria aplicable."""
+    return (
+        "Desde la perspectiva normativa, un mejor pronóstico de la demanda de productos perecibles no es solo una "
+        "cuestión de costos: al ajustar la producción diaria a la demanda esperada se reduce el inventario remanente "
+        "que, al final de la jornada, tiende a conservarse más allá de su vida útil o a reutilizarse en condiciones "
+        "inadecuadas. Así, la reducción de la merma contribuye directamente al cumplimiento de la vida útil declarada "
+        "y, con ello, a la inocuidad del alimento que llega al consumidor. En el Perú, la Ley N.° 26842, Ley General "
+        "de Salud (1997), establece que la producción y comercialización de alimentos está sujeta a vigilancia "
+        "sanitaria y que los alimentos destinados al consumo humano deben ser inocuos; el Decreto Legislativo "
+        "N.° 1062, Ley de Inocuidad de los Alimentos (2008), consagra la responsabilidad del proveedor sobre la "
+        "inocuidad de lo que produce y comercializa. El Decreto Supremo N.° 007-98-SA, Reglamento sobre Vigilancia y "
+        "Control Sanitario de Alimentos y Bebidas (1998), regula las condiciones de fabricación, almacenamiento y "
+        "conservación de los alimentos elaborados, y la Resolución Ministerial N.° 822-2018/MINSA, que aprueba la "
+        "Norma Sanitaria para Restaurantes y Servicios Afines [VERIFICAR: número de NTS y vigencia], fija criterios "
+        "de manipulación y conservación de preparaciones en establecimientos de expendio de comidas. En el plano "
+        "internacional, los Principios Generales de Higiene de los Alimentos del Codex Alimentarius (CXC 1-1969, "
+        "antes CAC/RCP 1-1969, revisados en 2020) recomiendan controlar el tiempo y la temperatura de los alimentos "
+        "listos para el consumo y rotar las existencias. En consecuencia, un plan de producción basado en el modelo "
+        "newsvendor, que limita la sobreproducción sistemática, constituye una herramienta de gestión que apoya el "
+        "cumplimiento de estas exigencias sanitarias, además de contribuir a la reducción de la pérdida y el "
+        "desperdicio de alimentos promovida por la FAO (2019)."
+    )

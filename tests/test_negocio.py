@@ -64,8 +64,10 @@ def test_pantallas_negocio(bd, monkeypatch):
     app = os.path.join(os.path.dirname(__file__), "..", "app.py")
     at = AppTest.from_file(app, default_timeout=120).run()
     assert not at.exception, at.exception
-    for nombre in ["📋 Registro", "🔮 Pronóstico", "📈 Seguimiento", "📊 Dashboard", "📚 Aprende",
-                   "⚙️ Configuración"]:
+    from victora.negocio_ui import TABS
+    assert TABS == ["🏠 Resumen del día", "📋 Registro de Ventas", "🔮 Motor de Pronóstico", "📈 Seguimiento",
+                    "📚 Módulo Educativo", "📊 Dashboard", "⚙️ Configuración"]  # orden del original
+    for nombre in TABS:
         at.session_state["tabs_neg"] = nombre
         at.run()
         assert not at.exception, (nombre, at.exception)
